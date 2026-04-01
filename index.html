@@ -273,6 +273,8 @@ body{font-family:'Barlow',sans-serif;background:var(--iron);color:var(--text);fo
       <div class="section-header"><div class="section-title">Lợi Nhuận Tháng — Tổng Hợp</div></div>
       <div class="auto-synced">⚡ Chi phí tự động từ Nhật Ký Chi & Chấm Công. Đầu tư (máy móc thiết bị) được tách riêng, không tính vào lợi nhuận tháng.</div>
       <div class="resp-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="card">
+          <div class="card-title">A. Doanh Thu Gia Công</div>
           <div id="rev-admin-section"></div>
         </div>
         <div class="card">
@@ -280,11 +282,11 @@ body{font-family:'Barlow',sans-serif;background:var(--iron);color:var(--text);fo
           <div id="cost-auto-section"></div>
         </div>
       </div>
-      <div class="card" style="margin-top:0;border:1.5px solid rgba(245,158,11,.35);background:rgba(245,158,11,.04)">
+      <div class="card" style="margin-top:12px;border:1.5px solid rgba(245,158,11,.35);background:rgba(245,158,11,.04)">
         <div class="card-title" style="color:var(--gold)">⚙️ Đầu Tư — Mua Máy Móc & Thiết Bị (không tính vào lợi nhuận tháng)</div>
         <div id="invest-section"></div>
       </div>
-      <div class="summary-total">
+      <div class="summary-total" style="margin-top:12px">
         <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px">TỔNG DOANH THU</div><div style="font-family:'Barlow Condensed';font-size:22px;font-weight:700;color:var(--green)" id="cp-rev">0đ</div></div>
         <div style="text-align:center"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">TỔNG CHI PHÍ VẬN HÀNH</div><div style="font-family:'Barlow Condensed';font-size:22px;font-weight:700;color:var(--red)" id="cp-cost">0đ</div></div>
         <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">LỢI NHUẬN RÒNG</div><div style="font-family:'Barlow Condensed';font-size:22px;font-weight:700" id="cp-profit">0đ</div></div>
@@ -293,7 +295,6 @@ body{font-family:'Barlow',sans-serif;background:var(--iron);color:var(--text);fo
         <span style="font-size:12px;color:var(--muted)">⚙️ Đầu tư tháng này (không tính vào lợi nhuận): </span>
         <span style="font-family:'Barlow Condensed';font-size:18px;font-weight:700;color:var(--gold)" id="cp-invest-val">0đ</span>
       </div>
-      <!-- Margin + BEP quick panel -->
       <div id="cp-analytics" style="margin-top:12px"></div>
     </div>
 
@@ -1140,7 +1141,7 @@ function renderChiPhi(){
   // Analytics panel: Tỷ suất LN + BEP nhanh
   const margin=rev?profit/rev*100:0;
   const {qty:actual,price}=computeAutoPrice(key);
-  const {fixed,varTotal}=computeBEPCosts(key);
+  const {fixed,varTotal}=computeBEPCosts();
   const varPerSp=actual>0?varTotal/actual:0;
   const contrib=price>0?price-varPerSp:0;
   const bep=contrib>0?Math.ceil(fixed/contrib):null;
