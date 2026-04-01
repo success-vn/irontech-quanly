@@ -386,9 +386,9 @@ body{font-family:'Barlow',sans-serif;background:var(--iron);color:var(--text);fo
 <script>
 // ── CONSTANTS ──────────────────────────────────────────────
 const ADMIN_PASS = 'IronTech@2026';
-const COST_CATS = ['Chi phí nhân công','Chi phí thuê mặt bằng xưởng','Chi phí điện sản xuất','Chi phí nước','Chi phí khí hàn, oxy, gas','Chi phí xăng dầu máy móc','Chi phí dây hàn','Chi phí bảo trì và sửa chữa máy móc','Chi phí vận chuyển và giao nhận','Chi phí khấu hao máy móc thiết bị','Chi phí quản lý và chi phí khác'];
-// Mục đầu tư — KHÔNG tính vào chi phí lợi nhuận tháng
-const INVEST_CATS = ['Đầu tư mua máy móc và thiết bị mới'];
+const COST_CATS = ['Chi phí nhân công','Chi phí thuê mặt bằng xưởng','Chi phí điện sản xuất','Chi phí nước','Chi phí khí hàn, oxy, gas','Chi phí xăng dầu máy móc','Chi phí dây hàn','Chi phí bảo trì và sửa chữa máy móc','Chi phí vận chuyển và giao nhận','Chi phí mua máy móc và thiết bị mới','Chi phí khấu hao máy móc thiết bị','Chi phí quản lý và chi phí khác'];
+// Mục đầu tư — khi chọn mục này trong NKC sẽ tự nhảy sang phần Đầu Tư, KHÔNG tính vào chi phí vận hành
+const INVEST_CAT = 'Chi phí mua máy móc và thiết bị mới';
 // Chi phí cố định hàng tháng (không tính lương nhân công thợ - đã tách riêng)
 const FIXED_CATS = ['Chi phí thuê mặt bằng xưởng','Chi phí khấu hao máy móc thiết bị','Chi phí quản lý và chi phí khác'];
 // Chi phí biến đổi (tỷ lệ theo sản lượng)
@@ -403,9 +403,6 @@ const COST_GROUPS = {
   'Mặt Bằng':['Chi phí thuê mặt bằng xưởng'],
   'Khấu Hao':['Chi phí khấu hao máy móc thiết bị'],
   'Quản Lý & Khác':['Chi phí quản lý và chi phí khác']
-};
-const INVEST_GROUPS = {
-  'Đầu Tư Máy Móc & Thiết Bị':['Đầu tư mua máy móc và thiết bị mới']
 };
 
 // ── STATE ──────────────────────────────────────────────────
@@ -492,19 +489,23 @@ function notif(msg,col){
 
 // ── COMPUTE ────────────────────────────────────────────────
 function computeExpTotals(key){
+  // Chỉ tính chi phí vận hành — KHÔNG tính mục đầu tư máy móc
   const d=gmd(key);const tots={};
-  (d.expenses||[]).forEach(e=>{const c=e.cat||COST_CATS[0];tots[c]=(tots[c]||0)+(parseFloat(e.amount)||0);});
+  (d.expenses||[]).forEach(e=>{
+    const c=e.cat||COST_CATS[0];
+    if(c===INVEST_CAT)return; // bỏ qua mục đầu tư
+    tots[c]=(tots[c]||0)+(parseFloat(e.amount)||0);
+  });
   return tots;
 }
 function computeInvestTotals(key){
-  const d=gmd(key);const tots={};
-  (d.investments||[]).forEach(e=>{const c=e.cat||INVEST_CATS[0];tots[c]=(tots[c]||0)+(parseFloat(e.amount)||0);});
-  return tots;
+  // Đọc từ expenses, lọc mục máy móc
+  const d=gmd(key);let total=0;
+  (d.expenses||[]).forEach(e=>{if(e.cat===INVEST_CAT)total+=(parseFloat(e.amount)||0);});
+  return total;
 }
-// Tổng đầu tư tháng (không tính vào lợi nhuận)
-function computeTotalInvest(key){
-  return Object.values(computeInvestTotals(key)).reduce((a,b)=>a+b,0);
-}
+// Alias
+function computeTotalInvest(key){return computeInvestTotals(key);}
 function computeSalary(key){
   const workers=getWorkers();const d=gmd(key);
   let total=0;
@@ -699,51 +700,44 @@ function renderNhatKyChi(){
   if(!d.expenses||!d.expenses.length){
     body.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--muted)">Chưa có khoản chi.</td></tr>`;
   } else {
-    body.innerHTML=d.expenses.map((e,i)=>`<tr>
-      <td style="text-align:center;color:var(--muted)">${i+1}</td>
-      <td>${isAdmin?`<input type="date" value="${e.date||''}" onchange="updE(${i},'date',this.value)" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;width:118px;font-size:11px;font-family:inherit">`:(e.date||'—')}</td>
-      <td>${isAdmin?`<input value="${e.desc||''}" onchange="updE(${i},'desc',this.value)" style="background:transparent;border:none;color:var(--text);width:100%;min-width:140px;font-size:12px;font-family:inherit">`:( e.desc||'—')}</td>
-      <td>${isAdmin?`<select onchange="updE(${i},'cat',this.value)" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:11px;width:100%;font-family:inherit">
-        ${COST_CATS.map(c=>`<option value="${c}" ${e.cat===c?'selected':''}>${c}</option>`).join('')}
-      </select>`:`<span style="font-size:11px;color:var(--muted)">${e.cat||'—'}</span>`}</td>
-      <td style="text-align:right">${isAdmin?`<input type="number" value="${e.amount||''}" placeholder="0" onchange="updE(${i},'amount',this.value)" style="background:var(--surface);border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:4px;width:125px;text-align:right;font-size:12px;font-family:inherit">`:fv(e.amount)}</td>
-      <td>${isAdmin?`<input value="${e.note||''}" onchange="updE(${i},'note',this.value)" style="background:transparent;border:none;color:var(--muted);font-size:11px;font-family:inherit;width:100%">`:(e.note||'')}</td>
-      <td>${isAdmin?`<button class="btn btn-ghost btn-sm" onclick="delE(${i})" style="color:var(--red)">✕</button>`:''}</td>
-    </tr>`).join('');
+    body.innerHTML=d.expenses.map((e,i)=>{
+      const isInvest=e.cat===INVEST_CAT;
+      return `<tr style="${isInvest?'background:rgba(245,166,35,.05)':''}">
+        <td style="text-align:center;color:var(--muted)">${i+1}</td>
+        <td>${isAdmin?`<input type="date" value="${e.date||''}" onchange="updE(${i},'date',this.value)" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;width:118px;font-size:11px;font-family:inherit">`:(e.date||'—')}</td>
+        <td>${isAdmin?`<input value="${e.desc||''}" onchange="updE(${i},'desc',this.value)" style="background:transparent;border:none;color:var(--text);width:100%;min-width:140px;font-size:12px;font-family:inherit">`:( e.desc||'—')}</td>
+        <td>${isAdmin?`<select onchange="updE(${i},'cat',this.value)" style="background:var(--surface);border:1px solid var(--border);color:${isInvest?'var(--gold)':'var(--text)'};padding:3px 6px;border-radius:4px;font-size:11px;width:100%;font-family:inherit">
+          ${COST_CATS.map(c=>`<option value="${c}" ${e.cat===c?'selected':''}>${c==='Chi phí mua máy móc và thiết bị mới'?'⚙️ '+c:c}</option>`).join('')}
+        </select>`:`<span style="font-size:11px;color:${isInvest?'var(--gold)':'var(--muted)'}">${isInvest?'⚙️ ':''} ${e.cat||'—'}</span>`}</td>
+        <td style="text-align:right">${isAdmin?`<input type="number" value="${e.amount||''}" placeholder="0" onchange="updE(${i},'amount',this.value)" style="background:var(--surface);border:1px solid var(--border);color:${isInvest?'var(--gold)':'var(--green)'};padding:3px 7px;border-radius:4px;width:125px;text-align:right;font-size:12px;font-family:inherit">`:fv(e.amount)}</td>
+        <td>${isAdmin?`<input value="${e.note||''}" onchange="updE(${i},'note',this.value)" style="background:transparent;border:none;color:var(--muted);font-size:11px;font-family:inherit;width:100%">`:(e.note||'')}</td>
+        <td>${isAdmin?`<button class="btn btn-ghost btn-sm" onclick="delE(${i})" style="color:var(--red)">✕</button>`:''}</td>
+      </tr>`;
+    }).join('');
   }
-  // Summary
-  const tots=computeExpTotals(ck());const total=Object.values(tots).reduce((a,b)=>a+b,0);
+  // Summary — tách vận hành & đầu tư
+  const tots=computeExpTotals(ck());
+  const totalOps=Object.values(tots).reduce((a,b)=>a+b,0);
+  const totalInvest=computeTotalInvest(ck());
   const el=document.getElementById('exp-summary');
-  if(!total){el.innerHTML='<div style="color:var(--muted);padding:8px;font-size:12px">Chưa có dữ liệu.</div>';return;}
+  if(!totalOps&&!totalInvest){el.innerHTML='<div style="color:var(--muted);padding:8px;font-size:12px">Chưa có dữ liệu.</div>';return;}
   el.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
     ${Object.entries(tots).map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 9px;background:var(--surface);border-radius:5px;font-size:12px">
       <span style="color:var(--muted)">${k}</span><span style="color:var(--green);font-weight:600">${fv(v)}</span>
     </div>`).join('')}
+    ${totalInvest?`<div style="display:flex;justify-content:space-between;padding:6px 9px;background:rgba(245,166,35,.08);border-radius:5px;font-size:12px;border:1px solid rgba(245,166,35,.2)">
+      <span style="color:var(--gold)">⚙️ Mua máy móc (Đầu tư)</span><span style="color:var(--gold);font-weight:600">${fv(totalInvest)}</span>
+    </div>`:''}
   </div>
-  <div style="text-align:right;margin-top:9px;padding-top:9px;border-top:1px solid var(--border)">
-    <span style="color:var(--muted);margin-right:9px;font-size:12px">TỔNG CHI (NKC):</span>
-    <span style="font-family:'Barlow Condensed';font-size:19px;font-weight:700;color:var(--red)">${fv(total)}</span>
+  <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:9px;padding-top:9px;border-top:1px solid var(--border)">
+    ${totalOps?`<span style="font-size:12px;color:var(--muted)">Chi phí vận hành: <b style="color:var(--red)">${fv(totalOps)}</b></span>`:''}
+    ${totalInvest?`<span style="font-size:12px;color:var(--muted)">Đầu tư: <b style="color:var(--gold)">${fv(totalInvest)}</b></span>`:''}
+    <span style="font-size:12px;color:var(--muted)">TỔNG CHI (NKC): <b style="font-family:'Barlow Condensed';font-size:16px;color:var(--red)">${fv(totalOps+totalInvest)}</b></span>
   </div>`;
 }
 function updE(i,f,v){const d=gmd(ck());d.expenses[i][f]=f==='amount'?parseFloat(v)||0:v;save();renderNhatKyChi();renderChiPhi();renderDashboard();renderHV();}
 function addExp(){const d=gmd(ck());if(!d.expenses)d.expenses=[];const today=new Date().toISOString().split('T')[0];d.expenses.push({date:today,desc:'',cat:COST_CATS[0],amount:0,note:''});save();renderNhatKyChi();}
 function delE(i){const d=gmd(ck());d.expenses.splice(i,1);save();renderNhatKyChi();renderChiPhi();renderDashboard();}
-
-// ── ĐẦU TƯ (MÁY MÓC THIẾT BỊ) ────────────────────────────
-function _renderInvestRows(key){
-  const d=gmd(key);const rows=d.investments||[];
-  if(!rows.length)return `<tr><td colspan="5" style="text-align:center;padding:12px;color:var(--muted);font-size:12px">Chưa có khoản đầu tư.</td></tr>`;
-  return rows.map((e,i)=>`<tr>
-    <td><input type="date" value="${e.date||''}" onchange="updInvest(${i},'date',this.value)" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;width:118px;font-size:11px;font-family:inherit"></td>
-    <td><input value="${e.desc||''}" onchange="updInvest(${i},'desc',this.value)" placeholder="Tên thiết bị / mô tả" style="background:transparent;border:none;color:var(--text);width:100%;min-width:150px;font-size:12px;font-family:inherit"></td>
-    <td style="text-align:right"><input type="number" value="${e.amount||''}" placeholder="0" onchange="updInvest(${i},'amount',this.value)" style="background:var(--surface);border:1px solid var(--border);color:var(--gold);padding:3px 7px;border-radius:4px;width:140px;text-align:right;font-size:12px;font-family:inherit"></td>
-    <td><input value="${e.note||''}" onchange="updInvest(${i},'note',this.value)" style="background:transparent;border:none;color:var(--muted);font-size:11px;font-family:inherit;width:100%"></td>
-    <td><button class="btn btn-ghost btn-sm" onclick="delInvest(${i})" style="color:var(--red)">✕</button></td>
-  </tr>`).join('');
-}
-function addInvest(){const d=gmd(ck());if(!d.investments)d.investments=[];const today=new Date().toISOString().split('T')[0];d.investments.push({date:today,desc:'',amount:0,note:''});save();renderChiPhi();renderDashboard();}
-function updInvest(i,f,v){const d=gmd(ck());if(!d.investments||!d.investments[i])return;d.investments[i][f]=f==='amount'?parseFloat(v)||0:v;save();renderChiPhi();renderDashboard();}
-function delInvest(i){const d=gmd(ck());d.investments.splice(i,1);save();renderChiPhi();renderDashboard();}
 
 // ── CHI PHI THANG ──────────────────────────────────────────
 function renderChiPhi(){
@@ -816,32 +810,34 @@ function renderChiPhi(){
   });
   costEl.innerHTML=cHTML;
 
-  // Invest section
+  // Invest section — đọc thẳng từ NKC, lọc mục INVEST_CAT
   const investEl=document.getElementById('invest-section');
   if(investEl){
     const totalInvest=computeTotalInvest(key);
-    if(isAdmin){
-      investEl.innerHTML=`
-        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Mua máy móc, thiết bị mới — <b style="color:var(--gold)">không tính vào lợi nhuận vận hành tháng</b>. Ghi vào đây để theo dõi riêng.</div>
-        <table class="data-table" style="margin-bottom:8px">
-          <thead><tr><th style="width:115px">Ngày</th><th>Nội Dung / Thiết Bị</th><th style="width:155px">Số Tiền (VNĐ)</th><th>Ghi Chú</th><th style="width:40px"></th></tr></thead>
-          <tbody id="invest-body">${_renderInvestRows(key)}</tbody>
-        </table>
-        <button class="btn btn-ghost btn-sm" onclick="addInvest()">+ Thêm khoản đầu tư</button>
-        ${totalInvest>0?`<span style="margin-left:12px;font-size:12px;color:var(--muted)">Tổng đầu tư: <b style="color:var(--gold)">${fv(totalInvest)}</b></span>`:''}`;
+    const investItems=(d.expenses||[]).filter(e=>e.cat===INVEST_CAT);
+    const infoLine=`<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Tự động lấy từ <b style="color:#60a5fa">Nhật Ký Chi</b> khi chọn mục "<b style="color:var(--gold)">Chi phí mua máy móc và thiết bị mới</b>". Không tính vào lợi nhuận vận hành.</div>`;
+    if(!investItems.length){
+      investEl.innerHTML=infoLine+`<div style="color:var(--muted);font-size:12px;padding:8px 0">Chưa có khoản đầu tư tháng này. Vào <b>Nhật Ký Chi</b> → chọn mục "Chi phí mua máy móc và thiết bị mới" để thêm.</div>`;
     } else {
-      if(totalInvest>0){
-        const d2=gmd(key);
-        investEl.innerHTML=(d2.investments||[]).map(e=>`<div class="cost-row"><span style="flex:1;font-size:12px;color:var(--muted)">${e.desc||'—'}</span><span style="font-weight:600;color:var(--gold)">${fv(e.amount)}</span></div>`).join('')+
-          `<div class="cost-row"><span style="font-weight:700">TỔNG ĐẦU TƯ</span><span style="font-family:'Barlow Condensed';font-size:18px;color:var(--gold)">${fv(totalInvest)}</span></div>`;
-      } else {
-        investEl.innerHTML=`<div style="color:var(--muted);font-size:12px;padding:8px 0">Không có khoản đầu tư tháng này.</div>`;
-      }
+      investEl.innerHTML=infoLine+`
+        <table class="data-table" style="margin-bottom:8px">
+          <thead><tr><th style="width:105px">Ngày</th><th>Nội Dung / Thiết Bị</th><th style="width:155px;text-align:right">Số Tiền</th><th>Ghi Chú</th></tr></thead>
+          <tbody>${investItems.map(e=>`<tr>
+            <td style="color:var(--muted)">${e.date||'—'}</td>
+            <td>${e.desc||'—'}</td>
+            <td style="text-align:right;color:var(--gold);font-weight:700">${fv(e.amount)}</td>
+            <td style="color:var(--muted);font-size:11px">${e.note||''}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+        <div style="text-align:right;padding-top:6px;border-top:1px solid var(--border)">
+          <span style="font-size:11px;color:var(--muted)">TỔNG ĐẦU TƯ: </span>
+          <span style="font-family:'Barlow Condensed';font-size:20px;font-weight:700;color:var(--gold)">${fv(totalInvest)}</span>
+        </div>`;
     }
-    // Show invest summary bar
+    // Show/hide summary bar under profit line
     const invSum=document.getElementById('cp-invest-summary');
     const invVal=document.getElementById('cp-invest-val');
-    if(invSum){invSum.style.display=totalInvest>0?'flex':'none';if(invVal)invVal.textContent=fv(totalInvest);}
+    if(invSum){invSum.style.display=totalInvest>0?'block':'none';if(invVal)invVal.textContent=fv(totalInvest);}
   }
 
   const rev=computeRevenue(key);const cost=computeTotalCost(key);const profit=rev-cost;
