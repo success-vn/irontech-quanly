@@ -524,48 +524,143 @@ const COST_GROUPS = {
 
 // ── STATE ──────────────────────────────────────────────────
 let role='viewer', selR='admin', curM=3, curY=2026, D={}, charts={};
-let _saving=false, _pendingSave=false;
 
 function mk(m,y){return `${y}-${String(m).padStart(2,'0')}`}
 function ck(){return mk(curM,curY)}
 function fv(n){if(!n&&n!==0)return '—'; return Math.round(n).toLocaleString('vi-VN')+'đ'}
 function fn(n){return Math.round(n||0).toLocaleString('vi-VN')}
 
-// ── PERSISTENT STORAGE (cross-device) ──────────────────────
-async function load(){
-  try{
-    const result = await window.storage.get('it_v3');
-    D = result ? JSON.parse(result.value) : {};
-  }catch(e){
-    // Key not found or error — start fresh
-    D={};
-  }
+// ── FIREBASE CONFIG (same project as Nhật Ký) ──────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyD513v5OVwJQdoHn-cHzlaCIZN3lhHv0LM",
+  authDomain: "nhat-ky-than-tam-tri.firebaseapp.com",
+  projectId: "nhat-ky-than-tam-tri",
+  databaseURL: "https://nhat-ky-than-tam-tri-default-rtdb.asia-southeast1.firebasedatabase.app",
+  storageBucket: "nhat-ky-than-tam-tri.firebasestorage.app",
+  messagingSenderId: "93665142564",
+  appId: "1:93665142564:web:718c27e06c1326f8cd75b1",
+};
+
+const LS_KEY   = 'it_v3';           // localStorage key
+const SYNC_TS  = 'it_v3_sync_ts';  // timestamp lần sync cuối
+let   db       = null;              // Firebase database instance
+
+// ── FIREBASE LOADER ────────────────────────────────────────
+function loadFirebase(){
+  return new Promise(resolve=>{
+    if(db){resolve(db);return;}
+    const s1=document.createElement('script');
+    s1.src='https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js';
+    s1.onload=()=>{
+      const s2=document.createElement('script');
+      s2.src='https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js';
+      s2.onload=()=>{
+        try{
+          if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+          db=firebase.database();
+        }catch(e){console.warn('Firebase init:',e);}
+        resolve(db);
+      };
+      s2.onerror=()=>resolve(null);
+      document.head.appendChild(s2);
+    };
+    s1.onerror=()=>resolve(null);
+    document.head.appendChild(s1);
+  });
 }
 
-async function save(){
-  if(_saving){_pendingSave=true;return;}
-  _saving=true;
-  try{
-    await window.storage.set('it_v3', JSON.stringify(D));
-    _setSyncStatus('saved');
-  }catch(e){
-    _setSyncStatus('error');
-  }
-  _saving=false;
-  if(_pendingSave){_pendingSave=false;save();}
-}
-
-function _setSyncStatus(state){
+// ── SYNC STATUS UI ─────────────────────────────────────────
+function setSyncStatus(text,color){
   const el=document.getElementById('sync-status');
   if(!el)return;
-  if(state==='saved'){
-    el.textContent='✓ Đã đồng bộ';el.style.color='var(--green)';
-    setTimeout(()=>{el.textContent='';},2500);
-  } else if(state==='saving'){
-    el.textContent='⟳ Đang lưu...';el.style.color='var(--muted)';
-  } else if(state==='error'){
-    el.textContent='⚠ Lỗi lưu';el.style.color='var(--red)';
+  el.textContent=text;
+  el.style.color=color||'var(--muted)';
+}
+
+// ── LOCAL STORAGE (backup + offline) ──────────────────────
+function loadLocal(){
+  try{const s=localStorage.getItem(LS_KEY);D=s?JSON.parse(s):{};}
+  catch(e){D={};}
+}
+function saveLocal(){
+  try{localStorage.setItem(LS_KEY,JSON.stringify(D));}catch(e){}
+}
+
+// ── FIREBASE SYNC 2 CHIỀU ──────────────────────────────────
+const FB_PATH='userdata/irontech';  // fixed path — shared across all devices
+
+async function syncBothWays(){
+  if(!db) return;
+  setSyncStatus('🔄 Đang đồng bộ...','var(--gold)');
+  try{
+    const snap=await db.ref(FB_PATH).once('value');
+    const remote=snap.val();
+    if(!remote){
+      await pushToFirebase();
+      return;
+    }
+    const localTs =parseInt(localStorage.getItem(SYNC_TS)||'0');
+    const remoteTs=remote.syncedAt||0;
+    if(remoteTs>localTs){
+      // Firebase mới hơn → kéo về
+      D=remote.data||{};
+      saveLocal();
+      localStorage.setItem(SYNC_TS,String(remoteTs));
+      const t=new Date(remoteTs).toLocaleTimeString('vi',{hour:'2-digit',minute:'2-digit'});
+      setSyncStatus('✅ '+t,'var(--green)');
+      notif('🔄 Đã đồng bộ dữ liệu từ thiết bị khác!');
+      renderAll();
+    } else {
+      await pushToFirebase();
+    }
+  }catch(e){
+    console.warn('Sync error:',e);
+    setSyncStatus('⚠ Lỗi sync','var(--red)');
   }
+}
+
+async function pushToFirebase(){
+  if(!db) return;
+  try{
+    const ts=Date.now();
+    await db.ref(FB_PATH).set({syncedAt:ts, data:D});
+    localStorage.setItem(SYNC_TS,String(ts));
+    const t=new Date(ts).toLocaleTimeString('vi',{hour:'2-digit',minute:'2-digit'});
+    setSyncStatus('✅ '+t,'var(--green)');
+  }catch(e){
+    console.warn('Push failed:',e);
+    setSyncStatus('⚠ Lỗi lưu cloud','var(--red)');
+  }
+}
+
+// ── DEBOUNCED AUTO-PUSH ────────────────────────────────────
+let _pushTimer=null;
+function schedulePush(){
+  clearTimeout(_pushTimer);
+  _pushTimer=setTimeout(()=>{
+    if(db) pushToFirebase();
+  },3000);
+}
+
+// ── MAIN LOAD / SAVE ──────────────────────────────────────
+async function load(){
+  // 1. Lấy local trước để app hiển thị ngay
+  loadLocal();
+  // 2. Kết nối Firebase trong nền rồi sync
+  setSyncStatus('⏳ Đang kết nối...','var(--gold)');
+  const database=await loadFirebase();
+  if(!database){
+    setSyncStatus('📴 Offline','var(--muted)');
+    return;
+  }
+  await syncBothWays();
+}
+
+function save(){
+  // Lưu local ngay lập tức
+  saveLocal();
+  // Đẩy lên Firebase sau 3 giây idle
+  schedulePush();
 }
 function gmd(key){
   if(!D[key])D[key]={expenses:[],revenues:[],investments:[],workerHours:{},workerBonus:{},workerAllowance:{},hvParams:{variable:0,price:0,actual:0}};
@@ -1688,13 +1783,19 @@ function renderAll(){
 }
 
 // ── BOOTSTRAP ──────────────────────────────────────────────
-(async function(){
+(function(){
+  // Load local data ngay lập tức
+  loadLocal();
+  // Ẩn loading, hiện login
   const loadScr=document.getElementById('loading-screen');
-  if(loadScr) loadScr.style.display='flex';
-  document.getElementById('login-screen').style.display='none';
-  await load();
   if(loadScr) loadScr.style.display='none';
   document.getElementById('login-screen').style.display='flex';
+  // Kết nối Firebase trong nền
+  setSyncStatus('⏳ Kết nối...','var(--gold)');
+  loadFirebase().then(database=>{
+    if(!database){setSyncStatus('📴 Offline','var(--muted)');return;}
+    syncBothWays();
+  });
 })();
 </script>
 </body>
