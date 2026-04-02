@@ -811,9 +811,15 @@ function computeSalary(key){
 function computeRevenue(key){
   const d=gmd(key);
   return (d.revenues||[]).reduce((a,r)=>{
-    const qty=parseFloat(r.qty)||0;const price=parseFloat(r.price)||0;const other=parseFloat(r.other)||0;
-    return a+qty*price+other;
+    const price=parseFloat(r.price)||0;
+    const tripsTotal=(r.trips||[]).reduce((s,t)=>s+(parseFloat(t.qty)||0)*price,0);
+    const other=parseFloat(r.other)||0;
+    return a+tripsTotal+other;
   },0);
+}
+// Tổng số bộ của 1 partner (dùng cho computeAutoPrice)
+function partnerQty(r){
+  return (r.trips||[]).reduce((s,t)=>s+(parseFloat(t.qty)||0),0);
 }
 function computeTotalCost(key){
   const expTots=computeExpTotals(key);const sal=computeSalary(key);
@@ -1033,54 +1039,95 @@ function renderChiPhi(){
   const key=ck();const d=gmd(key);const isAdmin=role==='admin';
   const expTots=computeExpTotals(key);const sal=computeSalary(key);
 
-  // Revenue section — admin input by price × qty
+  // Revenue section
   const revEl=document.getElementById('rev-admin-section');
   if(!d.revenues||!d.revenues.length){
-    // init default revenue rows
     d.revenues=[
-      {label:'Gia công khung sắt ô tô (Đối tác 1)',qty:0,price:0,other:0},
-      {label:'Gia công phụ – Đối tác 2',qty:0,price:0,other:0},
-      {label:'Doanh thu khác / lẻ',qty:0,price:0,other:0}
+      {label:'Gia công khung sắt ô tô (Đối tác 1)',price:0,other:0,trips:[{date:'',qty:0}]},
+      {label:'Gia công phụ – Đối tác 2',price:0,other:0,trips:[{date:'',qty:0}]},
+      {label:'Doanh thu khác / lẻ',price:0,other:0,trips:[{date:'',qty:0}]}
     ];
   }
+  // Migrate old format (qty field) to trips
+  d.revenues.forEach(r=>{
+    if(!r.trips){
+      r.trips=[{date:'',qty:r.qty||0}];
+      delete r.qty;
+    }
+  });
+
   if(isAdmin){
-    revEl.innerHTML=`
-      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:4px;margin-bottom:6px;padding:5px 0;border-bottom:1px solid var(--border)">
-        <div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase">Nguồn Doanh Thu</div>
-        <div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;text-align:center">Số Bộ/SL</div>
-        <div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;text-align:center">Đơn Giá/Bộ</div>
-        <div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;text-align:right">Tổng</div>
-      </div>
-      ${d.revenues.map((r,i)=>`
-      <div class="rev-input-row" style="margin-bottom:6px">
-        <div>
-          <label>Tên nguồn</label>
-          <input value="${r.label||''}" onchange="updRev(${i},'label',this.value)" placeholder="Tên đối tác / loại doanh thu">
+    revEl.innerHTML=d.revenues.map((r,i)=>{
+      const totalQty=partnerQty(r);
+      const totalVal=totalQty*(parseFloat(r.price)||0)+(parseFloat(r.other)||0);
+      return `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
+        <!-- Header: tên + giá -->
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin-bottom:10px">
+          <input value="${r.label||''}" onchange="updRev(${i},'label',this.value)"
+            style="background:#fff;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;font-weight:600;font-family:inherit;outline:none;width:100%"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+            placeholder="Tên đối tác / nguồn doanh thu">
+          <button onclick="delRevRow(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:2px 6px" title="Xoá nguồn">✕</button>
         </div>
-        <div>
-          <label>Số bộ / SL</label>
-          <input type="number" value="${r.qty||''}" placeholder="0" onchange="updRev(${i},'qty',this.value)">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+          <div>
+            <div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:4px">Đơn giá / bộ (VNĐ)</div>
+            <input type="number" value="${r.price||''}" placeholder="VD: 265000"
+              onchange="updRev(${i},'price',this.value)"
+              style="width:100%;background:#fff;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit;outline:none"
+              onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:4px">Cộng thêm (VNĐ)</div>
+            <input type="number" value="${r.other||''}" placeholder="0"
+              onchange="updRev(${i},'other',this.value)"
+              style="width:100%;background:#fff;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit;outline:none"
+              onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+          </div>
         </div>
-        <div>
-          <label>Đơn giá (VNĐ)</label>
-          <input type="number" value="${r.price||''}" placeholder="0" onchange="updRev(${i},'price',this.value)">
+        <!-- Trips table -->
+        <div style="margin-bottom:8px">
+          <div style="display:grid;grid-template-columns:140px 1fr 28px;gap:6px;padding:4px 6px;background:var(--border);border-radius:5px;margin-bottom:4px">
+            <div style="font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase">Ngày Giao</div>
+            <div style="font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase">Số Lượng (bộ)</div>
+            <div></div>
+          </div>
+          ${(r.trips||[]).map((t,j)=>`
+          <div style="display:grid;grid-template-columns:140px 1fr 28px;gap:6px;align-items:center;padding:3px 0">
+            <input type="date" value="${t.date||''}" onchange="updTrip(${i},${j},'date',this.value)"
+              style="background:#fff;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:12px;font-family:inherit;outline:none;width:100%">
+            <input type="number" value="${t.qty||''}" placeholder="0" onchange="updTrip(${i},${j},'qty',this.value)"
+              style="background:#fff;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:12px;font-family:inherit;outline:none;width:100%">
+            <button onclick="delTrip(${i},${j})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:2px" title="Xoá chuyến">✕</button>
+          </div>`).join('')}
+          <button onclick="addTrip(${i})" style="margin-top:6px;background:none;border:1px dashed var(--border);color:var(--blue);padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;width:100%">+ Thêm chuyến giao hàng</button>
         </div>
-        <div>
-          <label>Cộng thêm (VNĐ)</label>
-          <input type="number" value="${r.other||''}" placeholder="0" onchange="updRev(${i},'other',this.value)">
+        <!-- Tổng -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#fff;border-radius:6px;border:1px solid var(--border)">
+          <span style="font-size:11px;color:var(--muted)">${totalQty} bộ × ${fn(r.price||0)}đ + ${fn(r.other||0)}đ</span>
+          <span style="font-family:'Barlow Condensed';font-size:18px;font-weight:700;color:var(--green)">${fv(totalVal)}</span>
         </div>
-      </div>
-      <div style="text-align:right;margin-top:-4px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,.08)">
-        <span style="font-size:11px;color:var(--muted)">= ${fn(r.qty||0)} bộ × ${fn(r.price||0)}đ + ${fn(r.other||0)}đ = </span>
-        <span style="font-family:'Barlow Condensed';font-size:16px;font-weight:700;color:var(--green)">${fv((r.qty||0)*(r.price||0)+(r.other||0))}</span>
-      </div>`).join('')}
-      <div style="display:flex;gap:7px;margin-top:4px">
-        <button class="btn btn-ghost btn-sm" onclick="addRevRow()">+ Thêm dòng</button>
-        <button class="btn btn-primary btn-sm" onclick="saveChiPhi()">Lưu Doanh Thu</button>
       </div>`;
+    }).join('')+`
+    <div style="display:flex;gap:7px;margin-top:4px">
+      <button class="btn btn-ghost btn-sm" onclick="addRevRow()">+ Thêm đối tác</button>
+      <button class="btn btn-primary btn-sm" onclick="saveChiPhi()">Lưu Doanh Thu</button>
+    </div>`;
   } else {
+    // Viewer mode
     revEl.innerHTML=`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Nguồn doanh thu:</div>`+
-      d.revenues.map(r=>{const v=(r.qty||0)*(r.price||0)+(r.other||0);return `<div class="cost-row"><span style="flex:1;font-size:12px;color:var(--muted)">${r.label||'—'}</span><span style="font-weight:600;color:var(--green)">${fv(v)}</span></div>`;}).join('')+
+      d.revenues.map(r=>{
+        const qty=partnerQty(r);
+        const v=qty*(parseFloat(r.price)||0)+(parseFloat(r.other)||0);
+        return `<div class="cost-row">
+          <div style="flex:1">
+            <span style="font-size:12px;color:var(--muted)">${r.label||'—'}</span>
+            <span style="font-size:11px;color:var(--muted);margin-left:6px">${qty} bộ × ${fn(r.price||0)}đ</span>
+          </div>
+          <span style="font-weight:600;color:var(--green)">${fv(v)}</span>
+        </div>`;
+      }).join('')+
       `<div class="cost-row" style="border-top:1px solid var(--border);margin-top:4px"><span style="flex:1;font-weight:700">TỔNG</span><span style="font-family:'Barlow Condensed';font-size:18px;font-weight:700;color:var(--green)">${fv(computeRevenue(key))}</span></div>`;
   }
 
@@ -1172,11 +1219,37 @@ function renderChiPhi(){
 }
 function updRev(i,f,v){
   const d=gmd(ck());if(!d.revenues)d.revenues=[];
-  if(!d.revenues[i])d.revenues[i]={label:'',qty:0,price:0,other:0};
+  if(!d.revenues[i])d.revenues[i]={label:'',price:0,other:0,trips:[{date:'',qty:0}]};
   d.revenues[i][f]=f==='label'?v:parseFloat(v)||0;
   save();renderChiPhi();renderDashboard();renderHV();
 }
-function addRevRow(){const d=gmd(ck());if(!d.revenues)d.revenues=[];d.revenues.push({label:'Đối tác mới',qty:0,price:0,other:0});save();renderChiPhi();}
+function addRevRow(){
+  const d=gmd(ck());if(!d.revenues)d.revenues=[];
+  d.revenues.push({label:'Đối tác mới',price:0,other:0,trips:[{date:'',qty:0}]});
+  save();renderChiPhi();
+}
+function delRevRow(i){
+  const d=gmd(ck());if(!d.revenues)return;
+  if(d.revenues.length<=1){notif('Cần ít nhất 1 nguồn doanh thu!','var(--red)');return;}
+  d.revenues.splice(i,1);save();renderChiPhi();renderDashboard();renderHV();
+}
+function addTrip(i){
+  const d=gmd(ck());if(!d.revenues||!d.revenues[i])return;
+  if(!d.revenues[i].trips)d.revenues[i].trips=[];
+  const today=new Date().toISOString().split('T')[0];
+  d.revenues[i].trips.push({date:today,qty:0});
+  save();renderChiPhi();
+}
+function delTrip(i,j){
+  const d=gmd(ck());if(!d.revenues||!d.revenues[i]||!d.revenues[i].trips)return;
+  d.revenues[i].trips.splice(j,1);
+  save();renderChiPhi();renderDashboard();renderHV();
+}
+function updTrip(i,j,f,v){
+  const d=gmd(ck());if(!d.revenues||!d.revenues[i]||!d.revenues[i].trips)return;
+  d.revenues[i].trips[j][f]=f==='qty'?parseFloat(v)||0:v;
+  save();renderChiPhi();renderDashboard();renderHV();
+}
 function saveChiPhi(){save();notif('Đã lưu doanh thu!');}
 
 // ── HOA VON — GIẢ ĐỊNH CHI PHÍ ────────────────────────────
@@ -1268,7 +1341,9 @@ function computeAutoPrice(key){
   const d=gmd(key);const revs=d.revenues||[];
   let totalQty=0,totalRev=0;
   revs.forEach(r=>{
-    const q=parseFloat(r.qty)||0;const p=parseFloat(r.price)||0;const o=parseFloat(r.other)||0;
+    const p=parseFloat(r.price)||0;
+    const q=partnerQty(r);
+    const o=parseFloat(r.other)||0;
     totalQty+=q;totalRev+=q*p+o;
   });
   const avgPrice=totalQty>0?totalRev/totalQty:0;
