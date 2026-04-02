@@ -654,7 +654,11 @@ function loadLocal(){
   catch(e){D={};}
 }
 function saveLocal(){
-  try{localStorage.setItem(LS_KEY,JSON.stringify(D));}catch(e){}
+  try{
+    const ts=Date.now();
+    localStorage.setItem(LS_KEY,JSON.stringify(D));
+    localStorage.setItem(SYNC_TS,String(ts)); // update ngay để Firebase không ghi đè
+  }catch(e){}
 }
 
 // ── FIREBASE SYNC 2 CHIỀU ──────────────────────────────────
@@ -675,7 +679,8 @@ async function syncBothWays(){
     if(remoteTs>localTs){
       // Firebase mới hơn → kéo về
       D=fixArrays(remote.data||{});
-      saveLocal();
+      saveLocal(); // ghi D + cập nhật SYNC_TS=Date.now()
+      // Override lại bằng remoteTs để timestamp khớp với Firebase
       localStorage.setItem(SYNC_TS,String(remoteTs));
       const t=new Date(remoteTs).toLocaleTimeString('vi',{hour:'2-digit',minute:'2-digit'});
       setSyncStatus('✅ '+t,'var(--green)');
@@ -693,9 +698,9 @@ async function syncBothWays(){
 async function pushToFirebase(){
   if(!db) return;
   try{
-    const ts=Date.now();
+    // Dùng SYNC_TS đã lưu (set bởi saveLocal) để timestamp nhất quán
+    const ts=parseInt(localStorage.getItem(SYNC_TS)||String(Date.now()));
     await db.ref(FB_PATH).set({syncedAt:ts, data:D});
-    localStorage.setItem(SYNC_TS,String(ts));
     const t=new Date(ts).toLocaleTimeString('vi',{hour:'2-digit',minute:'2-digit'});
     setSyncStatus('✅ '+t,'var(--green)');
   }catch(e){
@@ -1041,8 +1046,8 @@ function _refreshChamCongCalc(){
       <div class="kpi profit"><div class="kpi-label">Tổng Chi Lương</div><div class="kpi-value" style="font-size:16px">${fv(tTotal)}</div><div class="kpi-sub">→ tự đồng bộ sang HV & CP</div></div>
     </div>`;
 }
-function updBonus(i,v){const d=gmd(ck());if(!d.workerBonus)d.workerBonus={};d.workerBonus[i]=parseFloat(v)||0;}
-function updAllw(i,v){const d=gmd(ck());if(!d.workerAllowance)d.workerAllowance={};d.workerAllowance[i]=parseFloat(v)||0;}
+function updBonus(i,v){const d=gmd(ck());if(!d.workerBonus)d.workerBonus={};d.workerBonus[i]=parseFloat(v)||0;save();}
+function updAllw(i,v){const d=gmd(ck());if(!d.workerAllowance)d.workerAllowance={};d.workerAllowance[i]=parseFloat(v)||0;save();}
 function addWorker(){const w=getWorkers();w.push({name:'',role:'Thợ hàn',rate:400000,inactive:false});setWorkers(w);save();renderChamCong();}
 function removeW(i){const w=getWorkers();w.splice(i,1);setWorkers(w);save();renderChamCong();}
 function toggleW(i,active){const w=getWorkers();if(w[i])w[i].inactive=!active;setWorkers(w);save();renderChamCong();}
