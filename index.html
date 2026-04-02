@@ -570,7 +570,53 @@ const LS_KEY   = 'it_v3';           // localStorage key
 const SYNC_TS  = 'it_v3_sync_ts';  // timestamp lần sync cuối
 let   db       = null;              // Firebase database instance
 
-// ── FIREBASE LOADER ────────────────────────────────────────
+// ── FIX FIREBASE ARRAY→OBJECT CONVERSION ──────────────────
+// Firebase tự convert [] thành {} khi lưu. Hàm này restore lại array.
+function toArr(v){
+  if(Array.isArray(v)) return v;
+  if(v&&typeof v==='object'){
+    // Convert {0:a, 1:b, ...} → [a, b, ...]
+    const maxKey=Math.max(...Object.keys(v).map(Number).filter(n=>!isNaN(n)));
+    if(maxKey>=0){
+      const arr=[];
+      for(let i=0;i<=maxKey;i++) arr.push(v[i]!==undefined?v[i]:0);
+      return arr;
+    }
+  }
+  return [];
+}
+function fixArrays(data){
+  if(!data||typeof data!=='object') return data;
+  // Fix _workers
+  if(data._workers) data._workers=toArr(data._workers).map(w=>({...w}));
+  // Fix _hvAssume arrays
+  if(data._hvAssume){
+    if(data._hvAssume.laborRows) data._hvAssume.laborRows=toArr(data._hvAssume.laborRows);
+    if(data._hvAssume.fixedRows) data._hvAssume.fixedRows=toArr(data._hvAssume.fixedRows);
+    if(data._hvAssume.varRows)   data._hvAssume.varRows=toArr(data._hvAssume.varRows);
+  }
+  // Fix per-month data
+  Object.keys(data).forEach(key=>{
+    if(!key.match(/^\d{4}-\d{2}$/)) return; // only month keys like "2026-04"
+    const m=data[key];
+    if(!m) return;
+    // expenses, revenues, investments: arrays
+    if(m.expenses)    m.expenses=toArr(m.expenses).map(e=>({...e}));
+    if(m.revenues)    m.revenues=toArr(m.revenues).map(r=>{
+      const rx={...r};
+      if(rx.trips) rx.trips=toArr(rx.trips).map(t=>({...t}));
+      return rx;
+    });
+    if(m.investments) m.investments=toArr(m.investments).map(i=>({...i}));
+    // workerHours: object of arrays {workerIdx: [h1,h2,...]}
+    if(m.workerHours){
+      Object.keys(m.workerHours).forEach(wi=>{
+        m.workerHours[wi]=toArr(m.workerHours[wi]);
+      });
+    }
+  });
+  return data;
+}
 function loadFirebase(){
   return new Promise(resolve=>{
     if(db){resolve(db);return;}
@@ -604,7 +650,7 @@ function setSyncStatus(text,color){
 
 // ── LOCAL STORAGE (backup + offline) ──────────────────────
 function loadLocal(){
-  try{const s=localStorage.getItem(LS_KEY);D=s?JSON.parse(s):{};}
+  try{const s=localStorage.getItem(LS_KEY);D=s?fixArrays(JSON.parse(s)):{};}
   catch(e){D={};}
 }
 function saveLocal(){
@@ -628,7 +674,7 @@ async function syncBothWays(){
     const remoteTs=remote.syncedAt||0;
     if(remoteTs>localTs){
       // Firebase mới hơn → kéo về
-      D=remote.data||{};
+      D=fixArrays(remote.data||{});
       saveLocal();
       localStorage.setItem(SYNC_TS,String(remoteTs));
       const t=new Date(remoteTs).toLocaleTimeString('vi',{hour:'2-digit',minute:'2-digit'});
@@ -817,10 +863,8 @@ function computeSalary(key){
   let total=0;
   workers.forEach((w,i)=>{
     if(w.inactive)return;
-    const hours=(d.workerHours&&d.workerHours[i])||[];
+    const hours=toArr(d.workerHours&&d.workerHours[i]);
     const totalHours=hours.reduce((a,b)=>a+(parseFloat(b)||0),0);
-    const ratePerDay=parseFloat(w.rate)||0;
-    // Lương = (tổng giờ / 8) × lương/ngày
     const baseSal=(totalHours/8)*ratePerDay;
     const bonus=parseFloat((d.workerBonus&&d.workerBonus[i])||0);
     const allowance=parseFloat((d.workerAllowance&&d.workerAllowance[i])||0);
@@ -882,7 +926,7 @@ function renderChamCong(){
     rows=`<tr><td colspan="${dim+11}" style="text-align:center;padding:18px;color:var(--muted)">Chưa có thợ. Nhấn "+ Thêm Thợ".</td></tr>`;
   } else {
     workers.forEach((w,i)=>{
-      const hours=(d.workerHours&&d.workerHours[i])||[];
+      const hours=toArr(d.workerHours&&d.workerHours[i]);
       const totalH=hours.reduce((a,b)=>a+(parseFloat(b)||0),0);
       const rateDay=parseFloat(w.rate)||0;
       const days=totalH/8;
@@ -918,7 +962,7 @@ function renderChamCong(){
   let tH=0,tBase=0,tBonus=0,tAllw=0;
   workers.forEach((w,i)=>{
     if(w.inactive)return;
-    const hours=(d.workerHours&&d.workerHours[i])||[];
+    const hours=toArr(d.workerHours&&d.workerHours[i]);
     const h2=hours.reduce((a,b)=>a+(parseFloat(b)||0),0);
     const r=parseFloat(w.rate)||0;
     tH+=h2;tBase+=h2/8*r;
@@ -956,7 +1000,7 @@ function _refreshChamCongCalc(){
   let tH=0,tBase=0,tBonus=0,tAllw=0;
   workers.forEach((w,i)=>{
     if(w.inactive)return;
-    const hours=(d.workerHours&&d.workerHours[i])||[];
+    const hours=toArr(d.workerHours&&d.workerHours[i]);
     const totalH=hours.reduce((a,b)=>a+(parseFloat(b)||0),0);
     const rateDay=parseFloat(w.rate)||0;
     const days=totalH/8;
