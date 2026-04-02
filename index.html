@@ -587,14 +587,8 @@ function toArr(v){
 }
 function fixArrays(data){
   if(!data||typeof data!=='object') return data;
-  // Fix _workers
+  // Fix _workers (global)
   if(data._workers) data._workers=toArr(data._workers).map(w=>({...w}));
-  // Fix _hvAssume arrays
-  if(data._hvAssume){
-    if(data._hvAssume.laborRows) data._hvAssume.laborRows=toArr(data._hvAssume.laborRows);
-    if(data._hvAssume.fixedRows) data._hvAssume.fixedRows=toArr(data._hvAssume.fixedRows);
-    if(data._hvAssume.varRows)   data._hvAssume.varRows=toArr(data._hvAssume.varRows);
-  }
   // Fix per-month data
   Object.keys(data).forEach(key=>{
     if(!key.match(/^\d{4}-\d{2}$/)) return; // only month keys like "2026-04"
@@ -613,6 +607,12 @@ function fixArrays(data){
       Object.keys(m.workerHours).forEach(wi=>{
         m.workerHours[wi]=toArr(m.workerHours[wi]);
       });
+    }
+    // hvAssume arrays (per-month)
+    if(m.hvAssume){
+      if(m.hvAssume.laborRows) m.hvAssume.laborRows=toArr(m.hvAssume.laborRows).map(r=>({...r}));
+      if(m.hvAssume.fixedRows) m.hvAssume.fixedRows=toArr(m.hvAssume.fixedRows).map(r=>({...r}));
+      if(m.hvAssume.varRows)   m.hvAssume.varRows=toArr(m.hvAssume.varRows).map(r=>({...r}));
     }
   });
   return data;
@@ -1248,37 +1248,16 @@ function renderChiPhi(){
   pel.textContent=fv(profit);pel.className='profit-'+(profit>=0?'positive':'negative');
   pel.style.cssText='font-family:\'Barlow Condensed\';font-size:22px;font-weight:700;color:'+(profit>=0?'var(--green)':'var(--red)');
 
-  // Analytics panel: Tỷ suất LN + BEP nhanh
+  // Analytics panel: chỉ hiển thị Tỷ suất LN
   const margin=rev?profit/rev*100:0;
-  const {qty:actual,price}=computeAutoPrice(key);
-  const {fixed,varTotal}=computeBEPCosts();
-  const varPerSp=actual>0?varTotal/actual:0;
-  const contrib=price>0?price-varPerSp:0;
-  const bep=contrib>0?Math.ceil(fixed/contrib):null;
-  const safetyMgn=bep&&actual?((actual-bep)/actual*100):0;
   const mcol=v=>v>20?'var(--green)':v>10?'var(--yellow)':'var(--red)';
   const an=document.getElementById('cp-analytics');
   if(an)an.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:0">
+    <div style="display:grid;grid-template-columns:repeat(1,1fr);gap:10px;margin-bottom:0">
       <div class="kpi margin">
         <div class="kpi-label">Tỷ Suất Lợi Nhuận</div>
         <div class="kpi-value" style="color:${mcol(margin)}">${rev?margin.toFixed(1)+'%':'—'}</div>
         <div class="kpi-sub">LN / Doanh thu</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">LN Đóng Góp / Bộ</div>
-        <div class="kpi-value" style="font-size:16px;color:var(--gold)">${contrib>0?fv(contrib):'—'}</div>
-        <div class="kpi-sub">Giá − Biến phí/bộ</div>
-      </div>
-      <div class="kpi cost">
-        <div class="kpi-label">Điểm Hòa Vốn</div>
-        <div class="kpi-value" style="color:var(--accent)">${bep?bep+' bộ':'—'}</div>
-        <div class="kpi-sub">DT tối thiểu: ${fv(bep&&price?bep*price:0)}</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Dư Địa An Toàn</div>
-        <div class="kpi-value" style="color:${mcol(safetyMgn)}">${actual&&bep?safetyMgn.toFixed(1)+'%':'—'}</div>
-        <div class="kpi-sub">${actual&&bep?(safetyMgn>0?'Dư '+(actual-bep)+' bộ':'Thiếu '+(bep-actual)+' bộ'+(()=>{const a2=getHvAssume();return a2.perTrip>0?' ('+Math.ceil((bep-actual)/a2.perTrip)+' chuyến)':''})()):'Xem tab Hòa Vốn'}</div>
       </div>
     </div>`;
 }
@@ -1317,33 +1296,56 @@ function updTrip(i,j,f,v){
 }
 function saveChiPhi(){save();notif('Đã lưu doanh thu!');}
 
-// ── HOA VON — GIẢ ĐỊNH CHI PHÍ ────────────────────────────
-function getHvAssume(){
-  if(!D._hvAssume) D._hvAssume={
-    laborRows:[
-      {label:'Thợ hàn',       count:1, days:26, ratePerDay:400000},
-      {label:'Thợ phụ việc',  count:1, days:26, ratePerDay:300000}
-    ],
-    fixedRows:[
-      {label:'Thuê mặt bằng xưởng', amount:0},
-      {label:'Điện cơ sở (chiếu sáng, máy chờ)', amount:0},
-      {label:'Khấu hao máy móc thiết bị', amount:0},
-      {label:'Chi phí quản lý & khác', amount:0}
-    ],
-    varRows:[
-      {label:'Dây hàn / bộ', amount:0},
-      {label:'Khí hàn, oxy, gas / bộ', amount:0},
-      {label:'Vận chuyển & giao nhận / bộ', amount:0}
-    ],
-    price:0,
-    perTrip:0
-  };
-  return D._hvAssume;
+// ── HOA VON — GIẢ ĐỊNH CHI PHÍ (lưu theo từng tháng) ──────
+const HV_DEFAULT = {
+  laborRows:[
+    {label:'Thợ hàn',      count:1, days:26, ratePerDay:400000},
+    {label:'Thợ phụ việc', count:1, days:26, ratePerDay:300000}
+  ],
+  fixedRows:[
+    {label:'Thuê mặt bằng xưởng', amount:0},
+    {label:'Điện cơ sở (chiếu sáng, máy chờ)', amount:0},
+    {label:'Khấu hao máy móc thiết bị', amount:0},
+    {label:'Chi phí quản lý & khác', amount:0}
+  ],
+  varRows:[
+    {label:'Dây hàn / bộ', amount:0},
+    {label:'Khí hàn, oxy, gas / bộ', amount:0},
+    {label:'Vận chuyển & giao nhận / bộ', amount:0}
+  ],
+  price:0,
+  perTrip:0
+};
+
+function _deepClone(obj){return JSON.parse(JSON.stringify(obj));}
+
+function _prevMonthKey(key){
+  // key = "2026-04" → trả về "2026-03"
+  const [y,m]=key.split('-').map(Number);
+  if(m===1) return `${y-1}-12`;
+  return `${y}-${String(m-1).padStart(2,'0')}`;
 }
 
-// Đọc giá trị từ DOM vào D._hvAssume rồi save (KHÔNG render lại input)
+function getHvAssume(){
+  const key=ck();
+  const d=gmd(key);
+  if(!d.hvAssume){
+    // Thử copy từ tháng trước
+    const prevKey=_prevMonthKey(key);
+    const prevD=D[prevKey];
+    if(prevD&&prevD.hvAssume){
+      d.hvAssume=_deepClone(prevD.hvAssume);
+      notif(`📋 Đã copy số liệu Hòa Vốn từ tháng trước`,'var(--blue)');
+    } else {
+      d.hvAssume=_deepClone(HV_DEFAULT);
+    }
+  }
+  return d.hvAssume;
+}
+
+// Đọc giá trị từ DOM vào hvAssume của tháng hiện tại rồi save
 function hvSave(){
-  const a=getHvAssume();
+  const a=getHvAssume(); // trả về gmd(ck()).hvAssume
   a.laborRows.forEach((r,i)=>{
     r.label=      (document.getElementById(`hv-lab-lbl-${i}`)||{}).value||r.label;
     r.count=      parseFloat((document.getElementById(`hv-lab-cnt-${i}`)||{}).value)||0;
