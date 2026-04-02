@@ -865,6 +865,7 @@ function computeSalary(key){
     if(w.inactive)return;
     const hours=toArr(d.workerHours&&d.workerHours[i]);
     const totalHours=hours.reduce((a,b)=>a+(parseFloat(b)||0),0);
+    const ratePerDay=parseFloat(w.rate)||0;
     const baseSal=(totalHours/8)*ratePerDay;
     const bonus=parseFloat((d.workerBonus&&d.workerBonus[i])||0);
     const allowance=parseFloat((d.workerAllowance&&d.workerAllowance[i])||0);
