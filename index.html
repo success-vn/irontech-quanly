@@ -207,6 +207,7 @@ body{font-family:'Barlow',sans-serif;background:var(--iron);color:var(--text);fo
       <button class="nav-tab" onclick="showTab('chamcong',this)">Chấm Công</button>
       <button class="nav-tab" onclick="showTab('nhatkychi',this)">Nhật Ký Chi</button>
       <button class="nav-tab" onclick="showTab('chiphi',this)">Lợi Nhuận</button>
+      <button class="nav-tab" onclick="showTab('giaohang',this)">Giao Hàng</button>
       <button class="nav-tab" onclick="showTab('hoavon',this)">Hòa Vốn</button>
       <button class="nav-tab" onclick="showTab('lichsu',this)">Lịch Sử</button>
       <button class="nav-tab" onclick="showTab('kaizen',this)">Đánh Giá</button>
@@ -439,6 +440,19 @@ body{font-family:'Barlow',sans-serif;background:var(--iron);color:var(--text);fo
       </div>
     </div>
 
+    <!-- GIAO HANG -->
+    <div id="tab-giaohang" class="section">
+      <div class="section-header">
+        <div class="section-title">Lịch Sử Giao Hàng</div>
+        <span id="gh-label" style="color:var(--muted);font-size:13px"></span>
+      </div>
+      <div class="auto-synced">⚡ Tự động tổng hợp từ tab Lợi Nhuận → Nguồn Doanh Thu. Thêm chuyến giao ở tab Lợi Nhuận, dữ liệu hiển thị ngay tại đây.</div>
+      <!-- KPI tổng tháng -->
+      <div id="gh-kpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px"></div>
+      <!-- Bảng giao hàng -->
+      <div id="gh-tables"></div>
+    </div>
+
     <!-- KAIZEN -->
     <div id="tab-kaizen" class="section">
       <div class="section-header"><div class="section-title">Đánh Giá & Kaizen — Cải Tiến Vận Hành</div></div>
@@ -477,6 +491,10 @@ body{font-family:'Barlow',sans-serif;background:var(--iron);color:var(--text);fo
 
 <!-- More menu overlay for mobile -->
 <div id="more-menu" style="display:none;position:fixed;bottom:58px;left:0;right:0;background:#fff;border-top:1px solid var(--border);z-index:199;padding:8px 0;box-shadow:0 -4px 12px rgba(0,0,0,.08)">
+  <button class="mnav-btn" style="flex-direction:row;gap:10px;height:44px;width:100%;padding:0 20px;justify-content:flex-start;font-size:13px" onclick="mobileTab('giaohang',null);closeMoreMenu()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+    Giao Hàng
+  </button>
   <button class="mnav-btn" style="flex-direction:row;gap:10px;height:44px;width:100%;padding:0 20px;justify-content:flex-start;font-size:13px" onclick="mobileTab('hoavon',null);closeMoreMenu()">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
     Hòa Vốn
@@ -733,6 +751,7 @@ function showTab(t,btn){
   if(t==='hoavon')renderHV();
   if(t==='kaizen')renderKaizen();
   if(t==='chiphi')renderChiPhi();
+  if(t==='giaohang')renderGiaoHang();
 }
 function mobileTab(t,btn){
   closeMoreMenu();
@@ -750,6 +769,7 @@ function mobileTab(t,btn){
   if(t==='hoavon')renderHV();
   if(t==='kaizen')renderKaizen();
   if(t==='chiphi')renderChiPhi();
+  if(t==='giaohang')renderGiaoHang();
 }
 function closeMoreMenu(){
   const m=document.getElementById('more-menu');
@@ -1847,6 +1867,112 @@ function renderKaizen(){
       <div><div style="font-weight:600;font-size:12px;margin-bottom:2px">${r.t}</div><div style="font-size:11px;color:var(--muted)">${r.d}</div></div>
     </div>`).join('')}
   </div>`;
+}
+
+// ── GIAO HANG ──────────────────────────────────────────────
+function renderGiaoHang(){
+  const key=ck();const d=gmd(key);
+  const revs=d.revenues||[];
+  document.getElementById('gh-label').textContent=`Tháng ${curM}/${curY}`;
+
+  // Tổng hợp toàn tháng
+  let totalTrips=0,totalQty=0,totalRev=0;
+  revs.forEach(r=>{
+    const price=parseFloat(r.price)||0;
+    (r.trips||[]).forEach(t=>{
+      const qty=parseFloat(t.qty)||0;
+      if(qty>0){totalTrips++;totalQty+=qty;totalRev+=qty*price;}
+    });
+  });
+  totalRev+=revs.reduce((s,r)=>s+(parseFloat(r.other)||0),0);
+
+  document.getElementById('gh-kpis').innerHTML=`
+    <div class="kpi revenue"><div class="kpi-label">Tổng Chuyến</div><div class="kpi-value" style="color:var(--blue)">${totalTrips}</div><div class="kpi-sub">chuyến giao tháng này</div></div>
+    <div class="kpi"><div class="kpi-label">Tổng Sản Lượng</div><div class="kpi-value" style="color:var(--text)">${totalQty}</div><div class="kpi-sub">bộ đã giao</div></div>
+    <div class="kpi profit"><div class="kpi-label">Doanh Thu</div><div class="kpi-value" style="font-size:17px;color:var(--green)">${fv(totalRev)}</div><div class="kpi-sub">tổng tháng</div></div>
+    <div class="kpi margin"><div class="kpi-label">Đối Tác</div><div class="kpi-value" style="color:var(--gold)">${revs.length}</div><div class="kpi-sub">nguồn doanh thu</div></div>`;
+
+  if(!totalTrips){
+    document.getElementById('gh-tables').innerHTML=`
+      <div class="card" style="text-align:center;padding:32px;color:var(--muted)">
+        <div style="font-size:36px;margin-bottom:8px">📦</div>
+        <div style="font-size:14px;font-weight:600">Chưa có chuyến giao hàng nào</div>
+        <div style="font-size:12px;margin-top:4px">Vào tab <b>Lợi Nhuận</b> → thêm chuyến giao hàng cho từng đối tác</div>
+      </div>`;
+    return;
+  }
+
+  // Màu badge cho từng đối tác
+  const partnerColors=['#2563eb','#16a34a','#d97706','#9333ea','#0891b2','#dc2626'];
+
+  let html='';
+  revs.forEach((r,pi)=>{
+    const price=parseFloat(r.price)||0;
+    const trips=(r.trips||[]).filter(t=>parseFloat(t.qty)>0);
+    if(!trips.length)return;
+
+    const partnerQtyTotal=trips.reduce((s,t)=>s+(parseFloat(t.qty)||0),0);
+    const partnerRev=partnerQtyTotal*price+(parseFloat(r.other)||0);
+    const color=partnerColors[pi%partnerColors.length];
+
+    // Sort by date
+    const sorted=[...trips].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+
+    html+=`
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid ${color}20">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:4px;height:36px;background:${color};border-radius:3px"></div>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--text)">${r.label||'Đối tác'}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:1px">Đơn giá: <b style="color:${color}">${fn(price)}đ/bộ</b> · ${trips.length} chuyến · ${partnerQtyTotal} bộ</div>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:'Barlow Condensed';font-size:22px;font-weight:700;color:${color}">${fv(partnerRev)}</div>
+          <div style="font-size:10px;color:var(--muted)">doanh thu tháng này</div>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="data-table" style="font-size:13px">
+          <thead>
+            <tr>
+              <th style="width:40px;text-align:center">#</th>
+              <th style="width:130px">Ngày Giao</th>
+              <th style="text-align:right">Số Lượng (bộ)</th>
+              <th style="text-align:right">Đơn Giá</th>
+              <th style="text-align:right">Thành Tiền</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sorted.map((t,j)=>{
+              const qty=parseFloat(t.qty)||0;
+              const amt=qty*price;
+              const dateStr=t.date?new Date(t.date).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}):'—';
+              return `<tr>
+                <td style="text-align:center;color:var(--muted);font-size:11px">${j+1}</td>
+                <td style="font-weight:600">${dateStr}</td>
+                <td style="text-align:right;font-size:15px;font-weight:700;color:var(--text)">${fn(qty)}</td>
+                <td style="text-align:right;color:var(--muted)">${fn(price)}đ</td>
+                <td style="text-align:right;font-weight:700;color:${color}">${fv(amt)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--surface)">
+              <td colspan="2" style="font-weight:700;padding:8px 10px;color:var(--muted)">TỔNG THÁNG</td>
+              <td style="text-align:right;font-family:'Barlow Condensed';font-size:18px;font-weight:700;color:var(--text)">${fn(partnerQtyTotal)} bộ</td>
+              <td></td>
+              <td style="text-align:right;font-family:'Barlow Condensed';font-size:18px;font-weight:700;color:${color}">${fv(partnerRev)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      ${parseFloat(r.other)>0?`<div style="margin-top:6px;padding:6px 10px;background:var(--surface);border-radius:6px;font-size:12px;color:var(--muted);text-align:right">Cộng thêm: <b style="color:var(--gold)">${fv(r.other)}</b></div>`:''}
+    </div>`;
+  });
+
+  document.getElementById('gh-tables').innerHTML=html||`<div class="card" style="text-align:center;padding:24px;color:var(--muted)">Chưa có chuyến giao hàng nào có số lượng > 0</div>`;
 }
 
 // ── INIT ───────────────────────────────────────────────────
