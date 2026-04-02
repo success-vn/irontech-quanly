@@ -588,7 +588,7 @@ function saveLocal(){
 }
 
 // ── FIREBASE SYNC 2 CHIỀU ──────────────────────────────────
-const FB_PATH='userdata/irontech';  // fixed path — shared across all devices
+const FB_PATH='userdata/irontech_main';  // dùng như memberId — khớp với $memberId rule
 
 async function syncBothWays(){
   if(!db) return;
